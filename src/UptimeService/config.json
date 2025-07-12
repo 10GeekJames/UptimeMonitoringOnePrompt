@@ -1,0 +1,19 @@
+{
+  "DatabasePath": "/tmp/UptimeYo/UptimeYo.db",
+  "ImagesPath": "/tmp/UptimeYo/Images",
+  "LogDirectory": "/tmp/UptimeYo/Logs",
+  "MonitoringIntervalSeconds": 15,
+  "Smtp": {
+    "Enabled": false,
+    "SmtpHost": "smtp.gmail.com",
+    "SmtpPort": 587,
+    "SmtpUser": "your-email@gmail.com",
+    "SmtpPass": "your-app-password",
+    "UseSSL": true,
+    "RecipientList": [
+      "admin@example.com"
+    ],
+    "FromAddress": "uptime-monitor@example.com",
+    "FromName": "Uptime Monitor"
+  }
+}

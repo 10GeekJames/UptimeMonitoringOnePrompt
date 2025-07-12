@@ -1,0 +1,239 @@
+﻿@page "/"
+@rendermode InteractiveServer
+@using UptimeData
+@inject IEndpointService EndpointService
+@inject IToastService ToastService
+
+<PageTitle>Service Status - Uptime Monitor</PageTitle>
+
+<div class="row">
+    <div class="col-md-12">
+        <h1 class="display-4">Service Status</h1>
+        <p class="lead">Monitor the health and activity of your uptime monitoring service.</p>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title">
+                    <span class="@GetStatusIconClass()"></span>
+                    Service Status
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-6">
+                        <div class="@GetStatusBadgeClass()">
+                            @GetStatusText()
+                        </div>
+                    </div>
+                    <div class="col-6 text-end">
+                        <small class="text-muted">Last Updated: @lastUpdated.ToString("HH:mm:ss")</small>
+                    </div>
+                </div>
+                <hr />
+                <div class="row">
+                    <div class="col-12">
+                        <p class="mb-1"><strong>Last Tick:</strong> @GetLastTickText()</p>
+                        <p class="mb-1"><strong>Ticks Today:</strong> @ticksToday</p>
+                        <p class="mb-0"><strong>Status:</strong> @GetStatusDescription()</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title">Controls</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-primary" @onclick="RefreshStatus" disabled="@isRefreshing">
+                        @if (isRefreshing)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                        }
+                        Refresh Status
+                    </button>
+                    <button class="btn btn-warning" @onclick="RestartService" disabled="@isRestarting">
+                        @if (isRestarting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                        }
+                        Restart Service
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title">Quick Statistics</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            <h3 class="text-primary">@totalEndpoints</h3>
+                            <p class="text-muted">Total Endpoints</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            <h3 class="text-success">@activeEndpoints</h3>
+                            <p class="text-muted">Active Endpoints</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            <h3 class="text-info">@successRate.ToString("F1")%</h3>
+                            <p class="text-muted">Success Rate</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            <h3 class="text-danger">@failuresToday</h3>
+                            <p class="text-muted">Failures Today</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private DateTime lastUpdated = DateTime.Now;
+    private DateTime lastTick = DateTime.Now.AddMinutes(-2);
+    private int ticksToday = 0;
+    private int totalEndpoints = 0;
+    private int activeEndpoints = 0;
+    private double successRate = 0.0;
+    private int failuresToday = 0;
+    private bool isRefreshing = false;
+    private bool isRestarting = false;
+    private System.Timers.Timer? refreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+        
+        // Set up auto-refresh every 30 seconds
+        refreshTimer = new System.Timers.Timer(30000);
+        refreshTimer.Elapsed += async (sender, e) => await InvokeAsync(async () => 
+        {
+            await LoadData();
+            StateHasChanged();
+        });
+        refreshTimer.Start();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            totalEndpoints = await EndpointService.GetTotalEndpointsCountAsync();
+            activeEndpoints = await EndpointService.GetActiveEndpointsCountAsync();
+            successRate = await EndpointService.GetSuccessRateAsync();
+            failuresToday = await EndpointService.GetFailuresTodayCountAsync();
+            ticksToday = await EndpointService.GetHitsTodayCountAsync();
+            
+            // Simulate service tick tracking (in real implementation, this would come from the service)
+            lastTick = DateTime.Now.AddMinutes(-1);
+            lastUpdated = DateTime.Now;
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Error loading data: {ex.Message}");
+        }
+    }
+
+    private async Task RefreshStatus()
+    {
+        isRefreshing = true;
+        try
+        {
+            await LoadData();
+            ToastService.ShowSuccess("Status refreshed successfully");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Error refreshing status: {ex.Message}");
+        }
+        finally
+        {
+            isRefreshing = false;
+        }
+    }
+
+    private async Task RestartService()
+    {
+        isRestarting = true;
+        try
+        {
+            // Simulate service restart (in real implementation, this would communicate with the service)
+            await Task.Delay(3000);
+            ToastService.ShowSuccess("Service restart simulated successfully");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Error restarting service: {ex.Message}");
+        }
+        finally
+        {
+            isRestarting = false;
+        }
+    }
+
+    private string GetStatusIconClass()
+    {
+        var timeSinceLastTick = DateTime.Now - lastTick;
+        return timeSinceLastTick.TotalSeconds < 40 ? "bi bi-check-circle text-success" :
+               timeSinceLastTick.TotalMinutes < 5 ? "bi bi-exclamation-triangle text-warning" :
+               "bi bi-x-circle text-danger";
+    }
+
+    private string GetStatusBadgeClass()
+    {
+        var timeSinceLastTick = DateTime.Now - lastTick;
+        return timeSinceLastTick.TotalSeconds < 40 ? "badge bg-success" :
+               timeSinceLastTick.TotalMinutes < 5 ? "badge bg-warning" :
+               "badge bg-danger";
+    }
+
+    private string GetStatusText()
+    {
+        var timeSinceLastTick = DateTime.Now - lastTick;
+        return timeSinceLastTick.TotalSeconds < 40 ? "Healthy" :
+               timeSinceLastTick.TotalMinutes < 5 ? "Warning" :
+               "Critical";
+    }
+
+    private string GetStatusDescription()
+    {
+        var timeSinceLastTick = DateTime.Now - lastTick;
+        return timeSinceLastTick.TotalSeconds < 40 ? "Service is operating normally" :
+               timeSinceLastTick.TotalMinutes < 5 ? "Service may be experiencing issues" :
+               "Service appears to be down";
+    }
+
+    private string GetLastTickText()
+    {
+        var timeSinceLastTick = DateTime.Now - lastTick;
+        return timeSinceLastTick.TotalMinutes < 1 ? 
+            $"{(int)timeSinceLastTick.TotalSeconds} seconds ago" :
+            $"{(int)timeSinceLastTick.TotalMinutes} minutes ago";
+    }
+
+    public void Dispose()
+    {
+        refreshTimer?.Dispose();
+    }
+}
