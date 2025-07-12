@@ -1,5 +1,5 @@
 # General Programming Standards
-
+ 
 ## Project Layout
 + Ability to enforce one top-level type per file  
 - only one class, enum, struct, interface or record in each `.cs` file  
