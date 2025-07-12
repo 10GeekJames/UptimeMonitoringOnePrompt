@@ -1,0 +1,342 @@
+@page "/endpoints"
+@rendermode InteractiveServer
+@using UptimeData
+@inject IEndpointService EndpointService
+@inject IToastService ToastService
+
+<PageTitle>Endpoints - Uptime Monitor</PageTitle>
+
+<div class="row">
+    <div class="col-md-12">
+        <h1 class="display-4">Monitored Endpoints</h1>
+        <p class="lead">Manage your monitored endpoints and view their current status.</p>
+    </div>
+</div>
+
+<div class="row mb-3">
+    <div class="col-md-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <button class="btn btn-primary" @onclick="ShowAddEndpointModal">
+                    <span class="bi bi-plus-circle me-2"></span>Add Endpoint
+                </button>
+                <button class="btn btn-outline-secondary ms-2" @onclick="RefreshEndpoints" disabled="@isRefreshing">
+                    @if (isRefreshing)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2"></span>
+                    }
+                    <span class="bi bi-arrow-clockwise me-2"></span>Refresh
+                </button>
+            </div>
+            <div class="text-muted">
+                <small>Auto-refresh every 10 seconds | Last update: @lastUpdated.ToString("HH:mm:ss")</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-body">
+                @if (endpoints == null)
+                {
+                    <div class="text-center py-4">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                }
+                else if (!endpoints.Any())
+                {
+                    <div class="text-center py-4">
+                        <p class="text-muted">No endpoints configured yet.</p>
+                        <button class="btn btn-primary" @onclick="ShowAddEndpointModal">
+                            <span class="bi bi-plus-circle me-2"></span>Add Your First Endpoint
+                        </button>
+                    </div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Status</th>
+                                    <th>URL</th>
+                                    <th>Frequency</th>
+                                    <th>Last Hit</th>
+                                    <th>Active</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var endpoint in endpoints)
+                                {
+                                    <tr>
+                                        <td>
+                                            <span class="@GetStatusIconClass(endpoint)"></span>
+                                        </td>
+                                        <td>
+                                            <a href="@endpoint.Url" target="_blank" class="text-decoration-none">
+                                                @endpoint.Url
+                                            </a>
+                                        </td>
+                                        <td>
+                                            <span class="@GetFrequencyBadgeClass(endpoint.Frequency)">
+                                                @endpoint.Frequency
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <span class="text-muted">@GetLastHitText(endpoint.LastHit)</span>
+                                        </td>
+                                        <td>
+                                            @if (endpoint.IsActive)
+                                            {
+                                                <span class="badge bg-success">Active</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-secondary">Inactive</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => ShowEditEndpointModal(endpoint)">
+                                                <span class="bi bi-pencil"></span>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteEndpoint(endpoint.Id)">
+                                                <span class="bi bi-trash"></span>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Endpoint Modal -->
+<div class="modal fade @(showModal ? "show" : "")" style="display: @(showModal ? "block" : "none")" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">@(editingEndpoint?.Id == Guid.Empty ? "Add" : "Edit") Endpoint</h5>
+                <button type="button" class="btn-close" @onclick="HideModal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">URL</label>
+                    <input type="url" class="form-control" @bind="editingEndpoint!.Url" placeholder="https://example.com" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Frequency</label>
+                    <select class="form-select" @bind="editingEndpoint!.Frequency">
+                        <option value="@Frequency.Realtime">Realtime</option>
+                        <option value="@Frequency.Daily">Daily</option>
+                        <option value="@Frequency.Paused">Paused</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" @bind="editingEndpoint!.IsActive" />
+                        <label class="form-check-label">Active</label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="HideModal">Cancel</button>
+                <button type="button" class="btn btn-primary" @onclick="SaveEndpoint" disabled="@isSaving">
+                    @if (isSaving)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2"></span>
+                    }
+                    Save
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (showModal)
+{
+    <div class="modal-backdrop fade show"></div>
+}
+
+@code {
+    private IEnumerable<MonitoredEndpoint>? endpoints;
+    private DateTime lastUpdated = DateTime.Now;
+    private bool isRefreshing = false;
+    private bool showModal = false;
+    private bool isSaving = false;
+    private MonitoredEndpoint? editingEndpoint;
+    private System.Timers.Timer? refreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadEndpoints();
+        
+        // Set up auto-refresh every 10 seconds
+        refreshTimer = new System.Timers.Timer(10000);
+        refreshTimer.Elapsed += async (sender, e) => await InvokeAsync(async () => 
+        {
+            await LoadEndpoints();
+            StateHasChanged();
+        });
+        refreshTimer.Start();
+    }
+
+    private async Task LoadEndpoints()
+    {
+        try
+        {
+            endpoints = await EndpointService.GetAllEndpointsAsync();
+            lastUpdated = DateTime.Now;
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Error loading endpoints: {ex.Message}");
+        }
+    }
+
+    private async Task RefreshEndpoints()
+    {
+        isRefreshing = true;
+        await LoadEndpoints();
+        ToastService.ShowSuccess("Endpoints refreshed successfully");
+        isRefreshing = false;
+    }
+
+    private void ShowAddEndpointModal()
+    {
+        editingEndpoint = new MonitoredEndpoint
+        {
+            Id = Guid.Empty,
+            Url = "",
+            Frequency = Frequency.Realtime,
+            IsActive = true,
+            LastHit = DateTime.UtcNow,
+            DelayUntilNextHit = DateTime.UtcNow.AddMinutes(1)
+        };
+        showModal = true;
+    }
+
+    private void ShowEditEndpointModal(MonitoredEndpoint endpoint)
+    {
+        editingEndpoint = new MonitoredEndpoint
+        {
+            Id = endpoint.Id,
+            Url = endpoint.Url,
+            Frequency = endpoint.Frequency,
+            IsActive = endpoint.IsActive,
+            LastHit = endpoint.LastHit,
+            DelayUntilNextHit = endpoint.DelayUntilNextHit
+        };
+        showModal = true;
+    }
+
+    private void HideModal()
+    {
+        showModal = false;
+        editingEndpoint = null;
+    }
+
+    private async Task SaveEndpoint()
+    {
+        if (editingEndpoint == null || string.IsNullOrWhiteSpace(editingEndpoint.Url))
+        {
+            ToastService.ShowError("Please enter a valid URL");
+            return;
+        }
+
+        isSaving = true;
+        try
+        {
+            if (editingEndpoint.Id == Guid.Empty)
+            {
+                editingEndpoint.Id = Guid.NewGuid();
+                await EndpointService.CreateEndpointAsync(editingEndpoint);
+                ToastService.ShowSuccess("Endpoint created successfully");
+            }
+            else
+            {
+                await EndpointService.UpdateEndpointAsync(editingEndpoint);
+                ToastService.ShowSuccess("Endpoint updated successfully");
+            }
+
+            await LoadEndpoints();
+            HideModal();
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Error saving endpoint: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task DeleteEndpoint(Guid id)
+    {
+        if (!await ConfirmDelete())
+            return;
+
+        try
+        {
+            await EndpointService.DeleteEndpointAsync(id);
+            await LoadEndpoints();
+            ToastService.ShowSuccess("Endpoint deleted successfully");
+        }
+        catch (Exception ex)
+        {
+            ToastService.ShowError($"Error deleting endpoint: {ex.Message}");
+        }
+    }
+
+    private async Task<bool> ConfirmDelete()
+    {
+        // In a real application, you would show a proper confirmation dialog
+        // For now, we'll just return true
+        return true;
+    }
+
+    private string GetStatusIconClass(MonitoredEndpoint endpoint)
+    {
+        var timeSinceLastHit = DateTime.UtcNow - endpoint.LastHit;
+        return timeSinceLastHit.TotalMinutes < 5 ? "bi bi-check-circle text-success" :
+               timeSinceLastHit.TotalMinutes < 60 ? "bi bi-exclamation-triangle text-warning" :
+               "bi bi-x-circle text-danger";
+    }
+
+    private string GetFrequencyBadgeClass(Frequency frequency)
+    {
+        return frequency switch
+        {
+            Frequency.Realtime => "badge bg-primary",
+            Frequency.Daily => "badge bg-info",
+            Frequency.Paused => "badge bg-secondary",
+            _ => "badge bg-secondary"
+        };
+    }
+
+    private string GetLastHitText(DateTime lastHit)
+    {
+        var timeSinceLastHit = DateTime.UtcNow - lastHit;
+        return timeSinceLastHit.TotalMinutes < 1 ? 
+            $"{(int)timeSinceLastHit.TotalSeconds} seconds ago" :
+            timeSinceLastHit.TotalHours < 1 ? 
+            $"{(int)timeSinceLastHit.TotalMinutes} minutes ago" :
+            timeSinceLastHit.TotalDays < 1 ? 
+            $"{(int)timeSinceLastHit.TotalHours} hours ago" :
+            $"{(int)timeSinceLastHit.TotalDays} days ago";
+    }
+
+    public void Dispose()
+    {
+        refreshTimer?.Dispose();
+    }
+}
